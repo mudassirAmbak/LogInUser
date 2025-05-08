@@ -1,5 +1,5 @@
 // import { useEffect, useState } from "react";
-// import { useNavigate } from "react-router-dom";
+// import { useLocation, useNavigate } from "react-router-dom";
 // import API from "../api";
 // import Img from "../images/c.png";
 // import { logout } from "../auth";
@@ -8,41 +8,55 @@
 // export default function Dashboard() {
 //   const [user, setUser] = useState(null);
 //   const navigate = useNavigate();
+//   const location = useLocation();
 
 //   useEffect(() => {
 //     const fetchUser = async () => {
 //       try {
-//         // Step 1: JWT login check
+//         // Step 0: Get token from URL if redirected from Google OAuth
+//         const queryParams = new URLSearchParams(location.search);
+//         const urlToken = queryParams.get("token");
+
+//         console.log("URL token before condition:", urlToken);
+
+//         if (urlToken) {
+//           localStorage.setItem("token", urlToken);
+//           navigate("/dashboard", { replace: true }); // Remove token from URL
+//           return;
+//         }
+
+//         // Step 1: Check localStorage for token
 //         const token = localStorage.getItem("token");
+
 //         if (token) {
 //           const res = await API.get("/users/me");
 //           setUser(res.data);
 //           return;
 //         }
 
-//         // Step 2: Google login session check via backend
-//         const googleRes = await fetch("http://localhost:5000/auth/login/success", {
-//           method: "GET",
-//           credentials: "include", // Include cookies
-//         });
+//         // Step 2: Try to fetch Google login session from backend
+//         const googleRes = await fetch(
+//           "http://localhost:5000/auth/login/success",
+//           {
+//             method: "GET",
+//             credentials: "include",
+//           }
+//         );
 
 //         if (googleRes.ok) {
 //           const googleData = await googleRes.json();
-//           localStorage.setItem("token", googleData.token); // Store JWT token
-//           setUser(googleData.user); // ✅ Set the user state
-//           navigate("/dashboard");
+//           localStorage.setItem("token", googleData.token);
+//           setUser(googleData.user);
 //         } else {
-//           console.log("Google session not found");
-//           // navigate("/login");
+//           console.log("No active Google session");
 //         }
 //       } catch (err) {
 //         console.error("Error fetching user:", err);
-//         // navigate("/login");
 //       }
 //     };
 
 //     fetchUser();
-//   }, [navigate]);
+//   }, [location.search, navigate]);
 
 //   const handleLogout = () => {
 //     Swal.fire({
@@ -53,16 +67,14 @@
 //       confirmButtonColor: "#3085d6",
 //       cancelButtonColor: "#d33",
 //       confirmButtonText: "Yes, logout!",
-//       cancelButtonText: "Cancel",
 //     }).then((result) => {
 //       if (result.isConfirmed) {
-//         logout(); // this should clear localStorage token
-//         // Also call backend logout for Google
+//         logout();
 //         fetch("http://localhost:5000/auth/logout", {
 //           method: "GET",
 //           credentials: "include",
 //         });
-//         // navigate("/login");
+//         navigate("/login");
 //       }
 //     });
 //   };
@@ -123,27 +135,31 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        // Step 0: Get token from URL if redirected from Google OAuth
         const queryParams = new URLSearchParams(location.search);
+        console.log("Query params:", queryParams.toString());
         const urlToken = queryParams.get("token");
 
-        console.log("URL token before condition:", urlToken);
-
         if (urlToken) {
+          // Save token to localStorage and navigate
           localStorage.setItem("token", urlToken);
-          navigate("/dashboard", { replace: true }); // Remove token from URL
+          navigate("/dashboard", { replace: true });
           return;
         }
 
-        // Step 1: Check localStorage for token
         const token = localStorage.getItem("token");
+
         if (token) {
-          const res = await API.get("/users/me");
-          setUser(res.data);
+          // Fetch user info with the token
+          const res = await API.get("/users/me", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          setUser(res.data); // Update user state
           return;
         }
 
-        // Step 2: Try to fetch Google login session from backend
+        // If no token, check Google login session
         const googleRes = await fetch(
           "http://localhost:5000/auth/login/success",
           {
@@ -154,10 +170,16 @@ export default function Dashboard() {
 
         if (googleRes.ok) {
           const googleData = await googleRes.json();
+          console.log("Google Data:", googleData);
+
+          // Save token and user data in localStorage
           localStorage.setItem("token", googleData.token);
-          setUser(googleData.user);
+          localStorage.setItem("user", JSON.stringify(googleData.user));
+          setUser(googleData.user); // Update user state
+          navigate("/dashboard", { replace: true }); // Navigate to dashboard
         } else {
           console.log("No active Google session");
+          // Optionally show a message or redirect to login if needed
         }
       } catch (err) {
         console.error("Error fetching user:", err);
@@ -201,7 +223,7 @@ export default function Dashboard() {
           <img
             src={user.picture || Img}
             alt="Profile"
-            className="w-24 h-24 rounded-full border"
+            className="w-24 h-24 rounded-full border object-cover"
           />
           <div>
             <p>

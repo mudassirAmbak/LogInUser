@@ -8,6 +8,7 @@ import AdminRoute from "./private/AdminRoute";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 
+
 function App() {
   return (
     <Router>
@@ -22,9 +23,10 @@ function App() {
           element={
             <PrivateRoute>
               <Dashboard />
-            </PrivateRoute> 
+               </PrivateRoute> 
           }
         />
+            
         <Route
           path="/admin"
           element={
@@ -39,7 +41,3 @@ function App() {
 }
 
 export default App;
-
-
-
-

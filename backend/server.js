@@ -1,29 +1,3 @@
-// import express from "express";
-// import cors from "cors";
-
-// import mainRoutes from "./routes/mainRoutes.js";
-// import userRoutes from "./routes/userRoutes.js";
-
-// import passwordRoutes from "./routes/password.js";
-
-// const app = express();
-
-// app.use(
-//   cors({
-//     origin: "http://localhost:3000",
-//     credentials: true,
-//   })
-// );
-
-// app.use(express.json());
-
-// app.use("/api/auth/password", passwordRoutes);
-// app.use("/api/auth", mainRoutes);
-// app.use("/api/users", userRoutes);
-
-// app.listen(5000, () => console.log("Server running on port 5000"));
-
-
 import express from "express";
 import cors from "cors";
 import session from "express-session";
@@ -42,6 +16,14 @@ import userRoutes from "./routes/userRoutes.js";
 import passwordRoutes from "./routes/password.js";
 import authRoutes from "./routes/auth.js"; // Google OAuth routes
 
+// import path from 'path';
+// import { fileURLToPath } from 'url';
+// import { dirname } from 'path';
+
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = dirname(__filename);
+
+
 const app = express();
 
 // CORS for frontend
@@ -54,6 +36,8 @@ app.use(
 
 // Middleware
 app.use(express.json());
+
+// app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use(
   session({
@@ -74,4 +58,6 @@ app.use("/auth", authRoutes); // Google OAuth
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+app.listen(PORT, () =>
+  console.log(`Server running on http://localhost:${PORT}`)
+);

@@ -59,15 +59,22 @@ export default function Register() {
     }
 
     try {
+      // Backend pe registration ke liye request bhejo
       await API.post("/auth/register", form);
       setErrors({});
       setSuccess("Registered successfully! ✅ ");
-
-      // After successful registration, redirect to dashboard
-      setTimeout(() => navigate("/dashboard"), 2000); // Delay for 2 seconds to show the success message
+  
+      // Agar registration successful ho gaya, login page pe redirect karo
+      setTimeout(() => navigate("/login"), 2000); // 2 seconds ke baad login page pe redirect
     } catch (error) {
-      setErrors({ general: "Registration failed. Please try again." });
-      setSuccess("");
+      if (error.response && error.response.data.message === "User already exists. Please login.") {
+        setErrors({ general: "User already exists. Please login." });
+        setSuccess("");
+        setTimeout(() => navigate("/login"), 2000); // Agar user already exists, login page pe redirect karo
+      } else {
+        setErrors({ general: "Registration failed. Please try again." });
+        setSuccess("");
+      }
     }
   };
 

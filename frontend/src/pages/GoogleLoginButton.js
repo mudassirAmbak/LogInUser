@@ -10,13 +10,16 @@ const GoogleLoginButton = () => {
     onSuccess: async (tokenResponse) => {
       try {
         const accessToken = tokenResponse.access_token;
+        console.log("Access token:", accessToken);
 
         // Send access token to your backend
         const res = await axios.post("http://localhost:5000/api/auth/google-login", {
           token: accessToken,
         });
+        console.log("Response from backend:", res.data);
 
         const backendToken = res.data.token;
+        console.log("Backend token:", backendToken);
         const user = jwtDecode(backendToken); // decode to get role/email/etc.
 
         // Store token & user

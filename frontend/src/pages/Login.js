@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import API from "../api";
 import { setUser } from "../auth";
 import { motion } from "framer-motion";
@@ -12,6 +12,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
 
   const validateEmail = (email) => {
     const re = /\S+@\S+\.\S+/;
@@ -54,21 +55,37 @@ export default function Login() {
     }
   };
 
+
+  useEffect(() => {
+    const queryParams = new URLSearchParams(location.search);
+    console.log("Query params:", queryParams.toString());
+    const urlToken = queryParams.get("token");
+
+    if (urlToken) {
+      // Save token to localStorage and navigate
+      localStorage.setItem("token", urlToken);
+      navigate("/dashboard", { replace: true });
+      return;
+    }
+  },[]);
   // Google OAuth token handler
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    console.log("URL params:", urlParams);
+    
     const token = urlParams.get("token");
     console.log("URL token:", token);
     if (token) {
       API.get(`/auth/verify-token?token=${token}`)
-      
+
         .then((response) => {
-          localStorage.setItem("token", response.data.token); // Save JWT to localStorage
+          localStorage.setItem("token", response.data.token);
+          localStorage.setItem("user", JSON.stringify(response.data.user)); 
           setUser({
             token: response.data.token,
             user: response.data.user,
           });
+
           navigate("/dashboard", { replace: true }); // ✅ removes token from URL
         })
         .catch((error) => {
@@ -156,7 +173,7 @@ export default function Login() {
               alt="Google"
               className="w-5 h-5 mr-3"
             />
-            Continue with Google
+            Login with Google
           </a>
 
           <p className="text-sm text-center">

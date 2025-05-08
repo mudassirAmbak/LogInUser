@@ -1,0 +1,265 @@
+// routes/auth.js
+import express from "express";
+import passport from "passport";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+
+dotenv.config();
+const router = express.Router();
+
+router.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+
+router.get(
+  "/google/callback",
+  passport.authenticate("google", { failureRedirect: "/" }),
+  (req, res) => {
+    if (!req.user || !req.user.token) {
+      return res.status(500).send("User data or token missing in req.user");
+    }
+
+    const token = req.user.token;
+    const userExists = req.user.exists;
+
+    if (userExists) {
+      // 🔁 Existing user → login page
+      res.redirect(`http://localhost:3000/login?token=${token}`);
+    } else {
+      // 🆕 New user → signup page
+      res.redirect(`http://localhost:3000/signup?token=${token}`);
+    }
+  }
+);
+
+// Optional: Verify token
+router.get("/verify-token", (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(401).send("Token required");
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) return res.status(401).send("Invalid token");
+    res.json({ token, user });
+  });
+});
+
+export default router;
+
+
+
+// config/passport.js
+import passport from 'passport';
+import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import jwt from 'jsonwebtoken';
+import db from './db.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: 'http://localhost:5000/auth/google/callback',
+}, async (accessToken, refreshToken, profile, done) => {
+  const email = profile.emails[0].value;
+  const name = profile.displayName;
+  const picture = profile.photos?.[0]?.value || null;
+
+  try {
+    const [existing] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
+
+    let user;
+    let isNew = false;
+
+    if (existing.length === 0) {
+      // Don't insert here — let frontend signup form handle that
+      user = { name, email, picture }; // Partial user data
+      isNew = true;
+    } else {
+      user = existing[0];
+    }
+
+    const token = jwt.sign(
+      { email: user.email, name: user.name, id: user.id || null },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    return done(null, { token, user, exists: !isNew });
+  } catch (err) {
+    return done(err);
+  }
+}));
+
+passport.serializeUser((user, done) => {
+  if (!user || !user.user || !user.token) {
+    return done(new Error("User or token missing"));
+  }
+  done(null, { id: user.user.id || null, token: user.token, exists: user.exists });
+});
+
+passport.deserializeUser(async (data, done) => {
+  try {
+    if (!data.id) return done(null, { user: null, token: data.token, exists: false });
+
+    const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [data.id]);
+    if (!rows[0]) return done(new Error("User not found"));
+    done(null, { user: rows[0], token: data.token, exists: data.exists });
+  } catch (err) {
+    done(err);
+  }
+});
+// src/pages/Signup.jsx
+import React, { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import jwtDecode from "jwt-decode";
+import axios from "axios";
+
+const Signup = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [token, setToken] = useState("");
+  const [userData, setUserData] = useState({ name: "", email: "", picture: "" });
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const tokenFromURL = query.get("token");
+
+    if (!tokenFromURL) {
+      navigate("/login");
+      return;
+    }
+
+    setToken(tokenFromURL);
+
+    try {
+      const decoded = jwtDecode(tokenFromURL);
+      setUserData((prev) => ({
+        ...prev,
+        name: decoded.name || "",
+        email: decoded.email || "",
+      }));
+    } catch (err) {
+      console.error("Invalid token");
+      navigate("/login");
+    }
+  }, [location, navigate]);
+
+  const handleChange = (e) => {
+    setUserData({ ...userData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      const res = await axios.post("http://localhost:5000/api/users", userData);
+      alert("Signup successful!");
+      navigate("/dashboard");
+    } catch (err) {
+      console.error(err);
+      alert("Signup failed");
+    }
+  };
+
+  return (
+    <div className="signup-page" style={{ maxWidth: 400, margin: "auto" }}>
+      <h2>Complete Your Signup</h2>
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label>Name:</label>
+          <input name="name" value={userData.name} onChange={handleChange} required />
+        </div>
+        <div>
+          <label>Email (read-only):</label>
+          <input name="email" value={userData.email} readOnly />
+        </div>
+        <div>
+          <label>Profile Picture URL:</label>
+          <input name="picture" value={userData.picture} onChange={handleChange} />
+        </div>
+        <button type="submit">Finish Signup</button>
+      </form>
+    </div>
+  );
+};
+
+export default Signup;
+
+
+
+
+// src/pages/Signup.jsx
+import React, { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import jwtDecode from "jwt-decode";
+import axios from "axios";
+
+const Signup = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [token, setToken] = useState("");
+  const [userData, setUserData] = useState({ name: "", email: "", picture: "" });
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const tokenFromURL = query.get("token");
+
+    if (!tokenFromURL) {
+      navigate("/login");
+      return;
+    }
+
+    setToken(tokenFromURL);
+
+    try {
+      const decoded = jwtDecode(tokenFromURL);
+      setUserData((prev) => ({
+        ...prev,
+        name: decoded.name || "",
+        email: decoded.email || "",
+      }));
+    } catch (err) {
+      console.error("Invalid token");
+      navigate("/login");
+    }
+  }, [location, navigate]);
+
+  const handleChange = (e) => {
+    setUserData({ ...userData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      const res = await axios.post("http://localhost:5000/api/users", userData);
+      alert("Signup successful!");
+      navigate("/dashboard");
+    } catch (err) {
+      console.error(err);
+      alert("Signup failed");
+    }
+  };
+
+  return (
+    <div className="signup-page" style={{ maxWidth: 400, margin: "auto" }}>
+      <h2>Complete Your Signup</h2>
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label>Name:</label>
+          <input name="name" value={userData.name} onChange={handleChange} required />
+        </div>
+        <div>
+          <label>Email (read-only):</label>
+          <input name="email" value={userData.email} readOnly />
+        </div>
+        <div>
+          <label>Profile Picture URL:</label>
+          <input name="picture" value={userData.picture} onChange={handleChange} />
+        </div>
+        <button type="submit">Finish Signup</button>
+      </form>
+    </div>
+  );
+};
+
+export default Signup;

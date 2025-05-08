@@ -22,10 +22,12 @@ export const googleLogin = async (req, res) => {
       if (err) return res.status(500).json({ message: "Database error" });
 
       if (results.length === 0) {
+        
         // Insert user then generate JWT only after insert completes
         db.query(
           "INSERT INTO users (name, email, picture, role) VALUES (?, ?, ?, ?)",
           [name, email, picture, "user"],
+          
           (insertErr) => {
             if (insertErr) return res.status(500).json({ message: "Insert error" });
 
@@ -47,3 +49,4 @@ export const googleLogin = async (req, res) => {
     return res.status(401).json({ message: "Invalid Google token" });
   }
 };
+

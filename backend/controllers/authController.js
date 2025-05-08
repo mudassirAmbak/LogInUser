@@ -63,6 +63,3 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Login error", error: err.message });
   }
 };
-
-
-
