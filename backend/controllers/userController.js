@@ -17,7 +17,7 @@ export const getOwnProfile = async (req, res) => {
   try {
     const userId = req.user.id;
     const [results] = await db.query(
-      "SELECT id, name, email, role FROM users WHERE id = ?",
+      "SELECT id, name, email, role, picture FROM users WHERE id = ?",
       [userId]
     );
     res.json(results[0]);
@@ -63,5 +63,20 @@ export const updateUser = async (req, res) => {
     res
       .status(500)
       .json({ message: "Failed to update user", error: err.message });
+  }
+};
+
+export const updateProfilePic = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { imageUrl } = req.body;
+
+    if (!imageUrl) return res.status(400).json({ message: "Image URL is required" });
+
+    await db.execute("UPDATE users SET picture = ? WHERE id = ?", [imageUrl, userId]);
+
+    res.json({ message: "Profile picture updated successfully", imageUrl });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
   }
 };

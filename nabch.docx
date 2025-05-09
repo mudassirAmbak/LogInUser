@@ -1,265 +1,231 @@
-// routes/auth.js
-import express from "express";
-import passport from "passport";
-import jwt from "jsonwebtoken";
-import dotenv from "dotenv";
-
-dotenv.config();
-const router = express.Router();
-
-router.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
-
-router.get(
-  "/google/callback",
-  passport.authenticate("google", { failureRedirect: "/" }),
-  (req, res) => {
-    if (!req.user || !req.user.token) {
-      return res.status(500).send("User data or token missing in req.user");
-    }
-
-    const token = req.user.token;
-    const userExists = req.user.exists;
-
-    if (userExists) {
-      // 🔁 Existing user → login page
-      res.redirect(`http://localhost:3000/login?token=${token}`);
-    } else {
-      // 🆕 New user → signup page
-      res.redirect(`http://localhost:3000/signup?token=${token}`);
-    }
-  }
-);
-
-// Optional: Verify token
-router.get("/verify-token", (req, res) => {
-  const token = req.query.token;
-  if (!token) return res.status(401).send("Token required");
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(401).send("Invalid token");
-    res.json({ token, user });
-  });
-});
-
-export default router;
-
-
-
-// config/passport.js
-import passport from 'passport';
-import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-import jwt from 'jsonwebtoken';
-import db from './db.js';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: 'http://localhost:5000/auth/google/callback',
-}, async (accessToken, refreshToken, profile, done) => {
-  const email = profile.emails[0].value;
-  const name = profile.displayName;
-  const picture = profile.photos?.[0]?.value || null;
-
-  try {
-    const [existing] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
-
-    let user;
-    let isNew = false;
-
-    if (existing.length === 0) {
-      // Don't insert here — let frontend signup form handle that
-      user = { name, email, picture }; // Partial user data
-      isNew = true;
-    } else {
-      user = existing[0];
-    }
-
-    const token = jwt.sign(
-      { email: user.email, name: user.name, id: user.id || null },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
-
-    return done(null, { token, user, exists: !isNew });
-  } catch (err) {
-    return done(err);
-  }
-}));
-
-passport.serializeUser((user, done) => {
-  if (!user || !user.user || !user.token) {
-    return done(new Error("User or token missing"));
-  }
-  done(null, { id: user.user.id || null, token: user.token, exists: user.exists });
-});
-
-passport.deserializeUser(async (data, done) => {
-  try {
-    if (!data.id) return done(null, { user: null, token: data.token, exists: false });
-
-    const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [data.id]);
-    if (!rows[0]) return done(new Error("User not found"));
-    done(null, { user: rows[0], token: data.token, exists: data.exists });
-  } catch (err) {
-    done(err);
-  }
-});
-// src/pages/Signup.jsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import jwtDecode from "jwt-decode";
-import axios from "axios";
+import API from "../api";
+import Img from "../images/c.png";
+import { logout } from "../auth";
+import Swal from "sweetalert2";
 
-const Signup = () => {
-  const location = useLocation();
+export default function Dashboard() {
+  const [user, setUser] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const fileInputRef = useRef(null);
   const navigate = useNavigate();
-  const [token, setToken] = useState("");
-  const [userData, setUserData] = useState({ name: "", email: "", picture: "" });
+  const location = useLocation();
 
   useEffect(() => {
-    const query = new URLSearchParams(location.search);
-    const tokenFromURL = query.get("token");
+    const fetchUser = async () => {
+      try {
+        const queryParams = new URLSearchParams(location.search);
+        const urlToken = queryParams.get("token");
 
-    if (!tokenFromURL) {
-      navigate("/login");
-      return;
-    }
+        if (urlToken) {
+          localStorage.setItem("token", urlToken);
+          navigate("/dashboard", { replace: true });
+          return;
+        }
 
-    setToken(tokenFromURL);
+        const token = localStorage.getItem("token");
 
-    try {
-      const decoded = jwtDecode(tokenFromURL);
-      setUserData((prev) => ({
-        ...prev,
-        name: decoded.name || "",
-        email: decoded.email || "",
-      }));
-    } catch (err) {
-      console.error("Invalid token");
-      navigate("/login");
-    }
-  }, [location, navigate]);
+        if (token) {
+          const res = await API.get("/users/me", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          setUser(res.data);
+          return;
+        }
 
-  const handleChange = (e) => {
-    setUserData({ ...userData, [e.target.name]: e.target.value });
+        const googleRes = await fetch("http://localhost:5000/auth/login/success", {
+          method: "GET",
+          credentials: "include",
+        });
+
+        if (googleRes.ok) {
+          const googleData = await googleRes.json();
+          localStorage.setItem("token", googleData.token);
+          localStorage.setItem("user", JSON.stringify(googleData.user));
+          setUser(googleData.user);
+          navigate("/dashboard", { replace: true });
+        } else {
+          console.log("No active Google session");
+        }
+      } catch (err) {
+        console.error("Error fetching user:", err);
+      }
+    };
+
+    fetchUser();
+  }, [location.search, navigate]);
+
+  const handleLogout = () => {
+    Swal.fire({
+      title: "Are you sure?",
+      text: "You will be logged out of your account.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#3085d6",
+      cancelButtonColor: "#d33",
+      confirmButtonText: "Yes, logout!",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        logout();
+        fetch("http://localhost:5000/auth/logout", {
+          method: "GET",
+          credentials: "include",
+        });
+        navigate("/login");
+      }
+    });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleImageClick = () => {
+    fileInputRef.current.click();
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) return;
 
     try {
-      const res = await axios.post("http://localhost:5000/api/users", userData);
-      alert("Signup successful!");
-      navigate("/dashboard");
+      const formData = new FormData();
+      formData.append("profilePic", selectedFile);
+
+      const uploadRes = await fetch("http://localhost:5000/api/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: formData,
+      });
+
+      const uploadData = await uploadRes.json();
+
+      await fetch("http://localhost:5000/api/users/me/profile-pic", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ imageUrl: uploadData.imageUrl }),
+      });
+
+      setUser({ ...user, picture: uploadData.imageUrl });
+      setSelectedFile(null);
+      setPreviewUrl("");
+      fileInputRef.current.value = "";
+
+      Swal.fire({
+        icon: "success",
+        title: "Upload Successful!",
+        text: "Your profile picture has been updated.",
+        timer: 2000,
+        showConfirmButton: false,
+      });
     } catch (err) {
-      console.error(err);
-      alert("Signup failed");
+      console.error("Upload error:", err);
+
+      Swal.fire({
+        icon: "error",
+        title: "Upload Failed",
+        text: "Something went wrong while uploading your picture.",
+      });
     }
   };
+
+  if (!user) return <p className="text-center mt-10">Loading...</p>;
 
   return (
-    <div className="signup-page" style={{ maxWidth: 400, margin: "auto" }}>
-      <h2>Complete Your Signup</h2>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Name:</label>
-          <input name="name" value={userData.name} onChange={handleChange} required />
+    <div className="flex justify-center items-center h-screen bg-gradient-to-br from-blue-100 to-purple-200">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-96 transition transform hover:scale-[1.01]">
+        <div className="text-center mb-6">
+          <h2 className="text-3xl font-bold text-gray-800">My Profile</h2>
         </div>
-        <div>
-          <label>Email (read-only):</label>
-          <input name="email" value={userData.email} readOnly />
+
+        <div className="flex   mb-6">
+          {/* 👇 Hidden file input */}
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (file) {
+                setSelectedFile(file);
+                setPreviewUrl(URL.createObjectURL(file));
+              }
+            }}
+            className="hidden"
+          />
+
+          {/* 👇 Profile Image Clickable */}
+          <div onClick={handleImageClick} className="relative group cursor-pointer">
+            <img
+              src={previewUrl || user.picture || Img}
+              alt="Profile"
+              className="w-28 h-28 rounded-full border-4 border-blue-300 shadow-md object-cover mb-4 transition hover:opacity-80"
+            />
+            <div className="absolute inset-0 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 bg-black bg-opacity-30">
+              <span className="text-white text-xs font-semibold">Change</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-center items-center text-gray-700 space-y-1">
+            <div className="font-medium">
+              <span className="text-black">Name:</span> {user.name}
+            </div>
+            {user.role && (
+              <div className="font-medium">
+                <span className="text-black">Role:</span> {user.role}
+              </div>
+            )}
+          </div>
         </div>
-        <div>
-          <label>Profile Picture URL:</label>
-          <input name="picture" value={userData.picture} onChange={handleChange} />
-        </div>
-        <button type="submit">Finish Signup</button>
-      </form>
+
+        {previewUrl && (
+          <button
+            onClick={handleUpload}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl mb-3 font-semibold transition"
+          >
+            Upload Picture
+          </button>
+        )}
+
+        <button
+          onClick={handleLogout}
+          className="w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-xl font-semibold transition"
+        >
+          Logout
+        </button>
+      </div>
     </div>
   );
-};
-
-export default Signup;
+}
 
 
 
 
-// src/pages/Signup.jsx
-import React, { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import jwtDecode from "jwt-decode";
-import axios from "axios";
 
-const Signup = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const [token, setToken] = useState("");
-  const [userData, setUserData] = useState({ name: "", email: "", picture: "" });
 
-  useEffect(() => {
-    const query = new URLSearchParams(location.search);
-    const tokenFromURL = query.get("token");
 
-    if (!tokenFromURL) {
-      navigate("/login");
-      return;
-    }
 
-    setToken(tokenFromURL);
-
-    try {
-      const decoded = jwtDecode(tokenFromURL);
-      setUserData((prev) => ({
-        ...prev,
-        name: decoded.name || "",
-        email: decoded.email || "",
-      }));
-    } catch (err) {
-      console.error("Invalid token");
-      navigate("/login");
-    }
-  }, [location, navigate]);
-
-  const handleChange = (e) => {
-    setUserData({ ...userData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    try {
-      const res = await axios.post("http://localhost:5000/api/users", userData);
-      alert("Signup successful!");
-      navigate("/dashboard");
-    } catch (err) {
-      console.error(err);
-      alert("Signup failed");
-    }
-  };
-
-  return (
-    <div className="signup-page" style={{ maxWidth: 400, margin: "auto" }}>
-      <h2>Complete Your Signup</h2>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Name:</label>
-          <input name="name" value={userData.name} onChange={handleChange} required />
+ <div className="flex items-center justify-center gap-4 mb-6">
+          <img
+            src={user.picture || Img}
+            alt="Profile"
+            className="w-24 h-24 rounded-full border object-cover"
+          />
+          <div>
+            <p>
+              <strong>Name:</strong> {user.name}
+            </p>
+            <p>
+              <strong>Email:</strong> {user.email}
+            </p>
+            {user.role && (
+              <p>
+                <strong>Role:</strong> {user.role}
+              </p>
+            )}
+          </div>
         </div>
-        <div>
-          <label>Email (read-only):</label>
-          <input name="email" value={userData.email} readOnly />
-        </div>
-        <div>
-          <label>Profile Picture URL:</label>
-          <input name="picture" value={userData.picture} onChange={handleChange} />
-        </div>
-        <button type="submit">Finish Signup</button>
-      </form>
-    </div>
-  );
-};
-
-export default Signup;

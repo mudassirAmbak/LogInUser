@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import API from "../api";
 import { getUser, logout } from "../auth";
-import Img1 from "../images/e.png";
+import Img1 from "../images/tipu.png";
 
 export default function AdminDashboard() {
   const [users, setUsers] = useState([]);

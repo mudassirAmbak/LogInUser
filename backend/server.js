@@ -3,6 +3,7 @@ import cors from "cors";
 import session from "express-session";
 import passport from "passport";
 import dotenv from "dotenv";
+import fs from "fs";
 
 // Load environment variables
 dotenv.config();
@@ -16,13 +17,20 @@ import userRoutes from "./routes/userRoutes.js";
 import passwordRoutes from "./routes/password.js";
 import authRoutes from "./routes/auth.js"; // Google OAuth routes
 
-// import path from 'path';
-// import { fileURLToPath } from 'url';
-// import { dirname } from 'path';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
-// const __filename = fileURLToPath(import.meta.url);
-// const __dirname = dirname(__filename);
+import uploadRoutes from "./routes/uploadRoute.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
 
 const app = express();
 
@@ -54,7 +62,9 @@ app.use(passport.session());
 app.use("/api/auth/password", passwordRoutes);
 app.use("/api/auth", mainRoutes);
 app.use("/api/users", userRoutes);
-app.use("/auth", authRoutes); // Google OAuth
+app.use("/auth", authRoutes);
+app.use("/api/upload", uploadRoutes); // new route for file upload
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Start server
 const PORT = process.env.PORT || 5000;
